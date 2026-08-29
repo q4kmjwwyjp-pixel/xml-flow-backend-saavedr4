@@ -8,5 +8,48 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
+}
+
+model Proveedor {
+  id            String       @id @default(uuid())
+  rfc           String       @unique
+  nombre        String
+  regimenFiscal String
+  facturas      FacturaXML[]
+  createdAt     DateTime     @default(now())
+}
+
+model FacturaXML {
+  id                String          @id @default(uuid())
+  uuid              String          @unique
+  serie             String?
+  folio             String?
+  fechaEmision      DateTime
+  subTotal          Decimal         @db.Decimal(10, 2)
+  total             Decimal         @db.Decimal(10, 2)
+  metodoPago        String
+  formaPago         String?
+  usoCfdi           String
+  regimenReceptor   String
+  condicionesPago   String?
+  diasCredito       Int             @default(0)
+  estadoValidacion  String         
+  motivoRechazo     String?
+  
+  proveedorId       String
+  proveedor         Proveedor       @relation(fields: [proveedorId], references: [id])
+  
+  pagoProgramado    PagoProgramado?
+  createdAt         DateTime        @default(now())
+}
+
+model PagoProgramado {
+  id                  String      @id @default(uuid())
+  facturaId           String      @unique
+  factura             FacturaXML  @relation(fields: [facturaId], references: [id])
+  fechaEstimadaPago   DateTime
+  monto               Decimal     @db.Decimal(10, 2)
+  estatusPago         String      @default("Pendiente")
+  createdAt           DateTime    @default(now())
 }
