@@ -11,8 +11,15 @@ datasource db {
   provider  = "postgresql"
 }
 
+model Users {
+  id            Int           @id @default(autoincrement())
+  name          String
+  email         String        @unique
+  password      String
+}
+
 model Proveedor {
-  id            String       @id @default(uuid())
+  id            Int          @id @default(autoincrement())
   rfc           String       @unique
   nombre        String
   regimenFiscal String
@@ -21,7 +28,7 @@ model Proveedor {
 }
 
 model FacturaXML {
-  id                String          @id @default(uuid())
+  id                Int             @id @default(autoincrement())
   uuid              String          @unique
   serie             String?
   folio             String?
@@ -37,7 +44,7 @@ model FacturaXML {
   estadoValidacion  String         
   motivoRechazo     String?
   
-  proveedorId       String
+  proveedorId       Int
   proveedor         Proveedor       @relation(fields: [proveedorId], references: [id])
   
   pagoProgramado    PagoProgramado?
@@ -45,8 +52,8 @@ model FacturaXML {
 }
 
 model PagoProgramado {
-  id                  String      @id @default(uuid())
-  facturaId           String      @unique
+  id                  Int         @id @default(autoincrement())
+  facturaId           Int         @unique
   factura             FacturaXML  @relation(fields: [facturaId], references: [id])
   fechaEstimadaPago   DateTime
   monto               Decimal     @db.Decimal(10, 2)
