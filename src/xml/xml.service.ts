@@ -1,66 +1,140 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { CreateXmlDto } from './dto/create-xml.dto';
-import { UpdateXmlDto } from './dto/update-xml.dto';
 import { XMLParser } from 'fast-xml-parser';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class XmlService {
+  constructor(private prisma: PrismaService) {}
 
-  procesarYValidarXml(xmlString: string) {
-    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "" });
+  async procesarYValidarXml(xmlString: string) {
+    const parser = new XMLParser({ 
+      ignoreAttributes: false, 
+      attributeNamePrefix: "",
+      parseAttributeValue: false 
+    });
+    
     const jsonObj = parser.parse(xmlString);
-
     const comprobante = jsonObj['cfdi:Comprobante'];
+
     if (!comprobante) {
-      throw new BadRequestException('El archivo no tiene el formato de un CFDI válido');
+      throw new BadRequestException('El archivo no tiene la estructura raíz de un CFDI');
     }
 
+    const emisor = comprobante['cfdi:Emisor'];
     const receptor = comprobante['cfdi:Receptor'];
-    if (!receptor) {
-      throw new BadRequestException('El XML no contiene información del receptor');
+    const complemento = comprobante['cfdi:Complemento'];
+    
+    if (!emisor || !receptor) {
+      throw new BadRequestException('Falta el nodo Emisor o Receptor en el XML');
     }
 
-    const rfcReceptor = receptor['Rfc'];
-    const regimenFiscal = receptor['RegimenFiscalReceptor'];
-    const usoCfdi = receptor['UsoCFDI'];
-
-    if (!rfcReceptor || rfcReceptor.length < 12) {
-      throw new BadRequestException('RFC de receptor inválido o ausente');
-    }
-    if (!regimenFiscal) {
-      throw new BadRequestException('Falta el régimen fiscal del receptor');
-    }
-    if (!usoCfdi) {
-      throw new BadRequestException('Falta el uso de CFDI');
-    }
-
-    return {
-      mensaje: 'XML válido y procesado con éxito',
-      datosFiscales: {
-        rfc: rfcReceptor,
-        regimen: regimenFiscal,
-        uso: usoCfdi
+    let timbre = null;
+    if (complemento) {
+      if (Array.isArray(complemento)) {
+        const comp = complemento.find(c => c['tfd:TimbreFiscalDigital']);
+        timbre = comp ? comp['tfd:TimbreFiscalDigital'] : null;
+      } else {
+        timbre = complemento['tfd:TimbreFiscalDigital'];
       }
-    };
+    }
+
+    const uuid = timbre ? timbre['UUID'] : null;
+    if (!uuid) {
+      throw new BadRequestException('El XML no está timbrado (falta el UUID)');
+    }
+
+    const facturaExistente = await this.prisma.facturaXML.findUnique({
+      where: { uuid }
+    });
+
+    if (facturaExistente) {
+      throw new BadRequestException(`La factura con UUID ${uuid} ya fue procesada anteriormente.`);
+    }
+
+    const rfcProveedor = emisor['Rfc'];
+    const nombreProveedor = emisor['Nombre'];
+    const regimenFiscalProveedor = emisor['RegimenFiscal']; 
+
+    const usoCfdi = receptor['UsoCFDI'];
+    const regimenReceptor = receptor['RegimenFiscalReceptor'];
+    const serie = comprobante['Serie'] || null;
+    const folio = comprobante['Folio'] || null;
+    const fechaEmision = new Date(comprobante['Fecha']);
+    const subTotal = comprobante['SubTotal'];
+    const total = comprobante['Total'];
+    const metodoPago = comprobante['MetodoPago'];
+    const formaPago = comprobante['FormaPago'] || null;
+    const condicionesPago = comprobante['CondicionesDePago'] || null;
+
+    try {
+      // Upsert de Proveedor: Crea si no existe, actualiza si ya existe
+      const proveedor = await this.prisma.proveedor.upsert({
+        where: { rfc: rfcProveedor },
+        update: {
+          nombre: nombreProveedor,
+          regimenFiscal: regimenFiscalProveedor,
+        },
+        create: {
+          rfc: rfcProveedor,
+          nombre: nombreProveedor,
+          regimenFiscal: regimenFiscalProveedor,
+        }
+      });
+
+      // Crear la Factura vinculada al Proveedor
+      const factura = await this.prisma.facturaXML.create({
+        data: {
+          uuid,
+          serie,
+          folio,
+          fechaEmision,
+          subTotal,
+          total,
+          metodoPago,
+          formaPago,
+          usoCfdi,
+          regimenReceptor,
+          condicionesPago,
+          diasCredito: 0, 
+          estadoValidacion: 'Validada',
+          motivoRechazo: null,
+          proveedorId: proveedor.id
+        }
+      });
+
+      return {
+        mensaje: 'XML procesado y guardado correctamente',
+        factura: factura
+      };
+
+    } catch (error: any) {
+      throw new BadRequestException('Error al guardar en la base de datos: ' + error.message);
+    }
   }
 
-  create(createXmlDto: CreateXmlDto) {
-    return 'This action adds a new xml';
+
+
+
+  
+  async obtenerFacturas() {
+    return await this.prisma.facturaXML.findMany({
+      include: {
+        proveedor: true,
+        pagoProgramado: true
+      },
+      orderBy: { fechaEmision: 'desc' }
+    });
   }
 
-  findAll() {
-    return `This action returns all xml`;
-  }
+  async obtenerFacturaPorUuid(uuid: string) {
+    const factura = await this.prisma.facturaXML.findUnique({
+      where: { uuid },
+      include: { proveedor: true, pagoProgramado: true }
+    });
 
-  findOne(id: number) {
-    return `This action returns a #${id} xml`;
-  }
-
-  update(id: number, updateXmlDto: UpdateXmlDto) {
-    return `This action updates a #${id} xml`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} xml`;
+    if (!factura) {
+      throw new BadRequestException('La factura solicitada no existe');
+    }
+    return factura;
   }
 }
