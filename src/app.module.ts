@@ -13,7 +13,7 @@ import { AuthModule } from './auth/auth.module';
     AuthModule,
     PrismaModule,
     UsersModule,
-    XmlModule, // <-- ¡Aquí es donde faltaba agregarlo!
+    XmlModule,
     ConfigModule.forRoot({
       isGlobal: true
     })
