@@ -40,23 +40,13 @@ model FacturaXML {
   usoCfdi           String
   regimenReceptor   String
   condicionesPago   String?
-  diasCredito       Int             @default(0)
+  diasCredito       Int?           
   estadoValidacion  String         
-  motivoRechazo     String?
+  
+  fechaEstimadaPago DateTime?       
   
   proveedorId       Int
   proveedor         Proveedor       @relation(fields: [proveedorId], references: [id])
   
-  pagoProgramado    PagoProgramado?
   createdAt         DateTime        @default(now())
-}
-
-model PagoProgramado {
-  id                  Int         @id @default(autoincrement())
-  facturaId           Int         @unique
-  factura             FacturaXML  @relation(fields: [facturaId], references: [id])
-  fechaEstimadaPago   DateTime
-  monto               Decimal     @db.Decimal(10, 2)
-  estatusPago         String      @default("Pendiente")
-  createdAt           DateTime    @default(now())
 }

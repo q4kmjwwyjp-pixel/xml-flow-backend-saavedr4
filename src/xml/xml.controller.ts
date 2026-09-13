@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Req, BadRequestException } from '@nestjs/common';
+import { Controller,Delete, Get, Post, Param, Req, Body, BadRequestException } from '@nestjs/common';
 import { XmlService } from './xml.service';
 
 @Controller('xml')
@@ -28,5 +28,10 @@ export class XmlController {
   @Get(':uuid')
   async obtenerFacturaPorUuid(@Param('uuid') uuid: string) {
     return this.xmlService.obtenerFacturaPorUuid(uuid);
+  }
+
+  @Delete('delete')
+  async eliminarFactura(@Body('uuid') uuid: string) {
+    return this.xmlService.eliminarFactura(uuid)
   }
 }

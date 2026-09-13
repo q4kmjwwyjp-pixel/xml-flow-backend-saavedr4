@@ -66,8 +66,25 @@ export class XmlService {
     const formaPago = comprobante['FormaPago'] || null;
     const condicionesPago = comprobante['CondicionesDePago'] || null;
 
+    /// --- NUEVA LÓGICA DE CRÉDITO ---
+    let diasCredito: number | null = null;
+    let fechaEstimadaPago: Date | null = null;
+
+    // Verificamos si condicionesPago existe y contiene la palabra "credito" o "crédito"
+    const esCredito = condicionesPago && 
+      (condicionesPago.toLowerCase().includes('crédito') || condicionesPago.toLowerCase().includes('credito'));
+
+    if (esCredito) {
+      diasCredito = 30;
+      
+      // Calculamos la fecha en una variable temporal para evitar errores de TypeScript
+      const fechaCalculada = new Date();
+      fechaCalculada.setDate(fechaCalculada.getDate() + 30);
+      
+      fechaEstimadaPago = fechaCalculada;
+    }
+
     try {
-      // Upsert de Proveedor: Crea si no existe, actualiza si ya existe
       const proveedor = await this.prisma.proveedor.upsert({
         where: { rfc: rfcProveedor },
         update: {
@@ -80,9 +97,8 @@ export class XmlService {
           regimenFiscal: regimenFiscalProveedor,
         }
       });
-
-      // Crear la Factura vinculada al Proveedor
-      const factura = await this.prisma.facturaXML.create({
+      
+      await this.prisma.facturaXML.create({
         data: {
           uuid,
           serie,
@@ -95,12 +111,21 @@ export class XmlService {
           usoCfdi,
           regimenReceptor,
           condicionesPago,
-          diasCredito: 0, 
+          diasCredito,          // Se guardará 30 o null
+          fechaEstimadaPago,    // Se guardará la fecha o null
           estadoValidacion: 'Validada',
-          motivoRechazo: null,
           proveedorId: proveedor.id
         }
       });
+
+      const factura = await this.prisma.facturaXML.findUnique({
+        where: {
+          uuid: uuid,
+        },
+        include: {
+          proveedor: true
+        }
+      })
 
       return {
         mensaje: 'XML procesado y guardado correctamente',
@@ -111,16 +136,11 @@ export class XmlService {
       throw new BadRequestException('Error al guardar en la base de datos: ' + error.message);
     }
   }
-
-
-
-
   
   async obtenerFacturas() {
     return await this.prisma.facturaXML.findMany({
       include: {
         proveedor: true,
-        pagoProgramado: true
       },
       orderBy: { fechaEmision: 'desc' }
     });
@@ -129,12 +149,22 @@ export class XmlService {
   async obtenerFacturaPorUuid(uuid: string) {
     const factura = await this.prisma.facturaXML.findUnique({
       where: { uuid },
-      include: { proveedor: true, pagoProgramado: true }
+      include: {
+        proveedor: true
+      }
     });
 
     if (!factura) {
       throw new BadRequestException('La factura solicitada no existe');
     }
     return factura;
+  }
+
+  async eliminarFactura(uuid: string) {
+    return this.prisma.facturaXML.delete({
+      where: {
+        uuid: uuid
+      }
+    })
   }
 }
