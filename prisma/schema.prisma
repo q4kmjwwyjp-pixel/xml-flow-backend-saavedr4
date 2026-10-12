@@ -11,6 +11,12 @@ datasource db {
   provider  = "postgresql"
 }
 
+enum XMLEstados {
+  pagado
+  pendiente
+  vencido
+}
+
 model Users {
   id            Int           @id @default(autoincrement())
   name          String
@@ -30,6 +36,7 @@ model Proveedor {
 model FacturaXML {
   id                Int             @id @default(autoincrement())
   uuid              String          @unique
+  estado            XMLEstados      @default(pendiente)
   serie             String?
   folio             String?
   fechaEmision      DateTime

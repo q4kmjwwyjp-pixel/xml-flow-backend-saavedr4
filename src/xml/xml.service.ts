@@ -66,23 +66,26 @@ export class XmlService {
     const formaPago = comprobante['FormaPago'] || null;
     const condicionesPago = comprobante['CondicionesDePago'] || null;
 
-    /// --- NUEVA LÓGICA DE CRÉDITO ---
+    /// --- NUEVA LÓGICA DE CRÉDITO Y ESTADO ---
     let diasCredito: number | null = null;
     let fechaEstimadaPago: Date | null = null;
 
-    // Verificamos si condicionesPago existe y contiene la palabra "credito" o "crédito"
-    const esCredito = condicionesPago && 
-      (condicionesPago.toLowerCase().includes('crédito') || condicionesPago.toLowerCase().includes('credito'));
+    // Detectar crédito por PPD o texto en condiciones
+    const esCredito = 
+      metodoPago === 'PPD' || 
+      (condicionesPago && (condicionesPago.toLowerCase().includes('crédito') || condicionesPago.toLowerCase().includes('credito')));
 
     if (esCredito) {
       diasCredito = 30;
       
-      // Calculamos la fecha en una variable temporal para evitar errores de TypeScript
-      const fechaCalculada = new Date();
+      const fechaCalculada = new Date(fechaEmision);
       fechaCalculada.setDate(fechaCalculada.getDate() + 30);
       
       fechaEstimadaPago = fechaCalculada;
     }
+
+    // Definimos el estado inicial según si es crédito o no
+    const estadoInicial = esCredito ? 'pendiente' : 'pagado';
 
     try {
       const proveedor = await this.prisma.proveedor.upsert({
@@ -111,21 +114,18 @@ export class XmlService {
           usoCfdi,
           regimenReceptor,
           condicionesPago,
-          diasCredito,          // Se guardará 30 o null
-          fechaEstimadaPago,    // Se guardará la fecha o null
+          diasCredito,
+          fechaEstimadaPago,
           estadoValidacion: 'Validada',
+          estado: estadoInicial, // <--- Se asigna Pendiente o Pagado
           proveedorId: proveedor.id
         }
       });
 
       const factura = await this.prisma.facturaXML.findUnique({
-        where: {
-          uuid: uuid,
-        },
-        include: {
-          proveedor: true
-        }
-      })
+        where: { uuid },
+        include: { proveedor: true }
+      });
 
       return {
         mensaje: 'XML procesado y guardado correctamente',
@@ -149,9 +149,7 @@ export class XmlService {
   async obtenerFacturaPorUuid(uuid: string) {
     const factura = await this.prisma.facturaXML.findUnique({
       where: { uuid },
-      include: {
-        proveedor: true
-      }
+      include: { proveedor: true }
     });
 
     if (!factura) {
@@ -162,9 +160,31 @@ export class XmlService {
 
   async eliminarFactura(uuid: string) {
     return this.prisma.facturaXML.delete({
-      where: {
-        uuid: uuid
-      }
-    })
+      where: { uuid }
+    });
+  }
+
+  // --- NUEVAS FUNCIONES PARA CAMBIO DE ESTADO ---
+
+  async marcarComoPagado(uuid: string) {
+    // Reutilizamos obtenerFacturaPorUuid para asegurar que exista antes de actualizar
+    await this.obtenerFacturaPorUuid(uuid); 
+
+    return await this.prisma.facturaXML.update({
+      where: { uuid },
+      data: { estado: 'pagado' },
+      include: { proveedor: true }
+    });
+  }
+
+  async marcarComoVencido(uuid: string) {
+    // Reutilizamos obtenerFacturaPorUuid para asegurar que exista antes de actualizar
+    await this.obtenerFacturaPorUuid(uuid);
+
+    return await this.prisma.facturaXML.update({
+      where: { uuid },
+      data: { estado: 'vencido' },
+      include: { proveedor: true }
+    });
   }
 }

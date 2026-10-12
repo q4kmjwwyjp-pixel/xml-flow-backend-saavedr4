@@ -1,4 +1,4 @@
-import { Controller,Delete, Get, Post, Param, Req, Body, BadRequestException } from '@nestjs/common';
+import { Controller, Delete, Get, Post, Param, Req, Body, BadRequestException, Patch } from '@nestjs/common';
 import { XmlService } from './xml.service';
 
 @Controller('xml')
@@ -33,5 +33,17 @@ export class XmlController {
   @Delete('delete')
   async eliminarFactura(@Body('uuid') uuid: string) {
     return this.xmlService.eliminarFactura(uuid)
+  }
+
+  // --- NUEVOS ENDPOINTS PARA ESTADOS ---
+
+  @Patch(':uuid/pagado')
+  async marcarComoPagado(@Param('uuid') uuid: string) {
+    return this.xmlService.marcarComoPagado(uuid);
+  }
+
+  @Patch(':uuid/vencido')
+  async marcarComoVencido(@Param('uuid') uuid: string) {
+    return this.xmlService.marcarComoVencido(uuid);
   }
 }
