@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Post, Param, Req, Body, BadRequestException, Patch } from '@nestjs/common';
+import { Controller, Delete, Get, Post, Param, Req, Body, BadRequestException, Patch, Query } from '@nestjs/common';
 import { XmlService } from './xml.service';
 
 @Controller('xml')
@@ -23,6 +23,23 @@ export class XmlController {
   @Get()
   async obtenerTodasLasFacturas() {
     return this.xmlService.obtenerFacturas();
+  }
+
+  @Get('reporte/semanal')
+  async obtenerReporteSemanal(
+    @Query('fechaInicio') fechaInicio?: string,
+    @Query('fechaFin') fechaFin?: string,
+    @Query('criterio') criterio?: 'pago' | 'emision' | 'recepcion',
+    @Query('estado') estado?: string,
+    @Query('metodoPago') metodoPago?: string,
+  ) {
+    return this.xmlService.generarReporteSemanal({
+      fechaInicio,
+      fechaFin,
+      criterio,
+      estado,
+      metodoPago,
+    });
   }
 
   @Get(':uuid')

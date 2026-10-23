@@ -187,4 +187,126 @@ export class XmlService {
       include: { proveedor: true }
     });
   }
+
+  async generarReporteSemanal(filtros: {
+    fechaInicio?: string;
+    fechaFin?: string;
+    criterio?: 'pago' | 'emision' | 'recepcion';
+    estado?: string;
+    metodoPago?: string;
+  }) {
+    const where: any = {};
+
+    // Filtro por estado si se especifica y no es TODOS
+    if (filtros.estado && filtros.estado.toUpperCase() !== 'TODOS') {
+      const est = filtros.estado.toLowerCase();
+      if (est === 'pagado' || est === 'pendiente' || est === 'vencido') {
+        where.estado = est;
+      }
+    }
+
+    // Filtro por método de pago (PPD / PUE)
+    if (filtros.metodoPago && filtros.metodoPago.toUpperCase() !== 'TODAS') {
+      where.metodoPago = filtros.metodoPago.toUpperCase();
+    }
+
+    // Filtro por rango de fechas según el criterio solicitado
+    if (filtros.fechaInicio || filtros.fechaFin) {
+      const rangoFecha: any = {};
+      if (filtros.fechaInicio) {
+        rangoFecha.gte = new Date(`${filtros.fechaInicio}T00:00:00.000Z`);
+      }
+      if (filtros.fechaFin) {
+        rangoFecha.lte = new Date(`${filtros.fechaFin}T23:59:59.999Z`);
+      }
+
+      if (filtros.criterio === 'emision') {
+        where.fechaEmision = rangoFecha;
+      } else if (filtros.criterio === 'recepcion') {
+        where.createdAt = rangoFecha;
+      } else {
+        where.fechaEstimadaPago = rangoFecha;
+      }
+    }
+
+    const facturas = await this.prisma.facturaXML.findMany({
+      where,
+      include: { proveedor: true },
+      orderBy: { fechaEmision: 'desc' },
+    });
+
+    let subtotalAcumulado = 0;
+    let impuestosTrasladados = 0;
+    let granTotal = 0;
+    let montoPagado = 0;
+    let montoPendiente = 0;
+    let montoVencido = 0;
+
+    const mapaProveedores = new Map<
+      number,
+      {
+        proveedorId: number;
+        rfc: string;
+        nombre: string;
+        regimenFiscal: string;
+        cantidadFacturas: number;
+        subTotal: number;
+        impuestos: number;
+        total: number;
+      }
+    >();
+
+    for (const f of facturas) {
+      const sub = Number(f.subTotal || 0);
+      const tot = Number(f.total || 0);
+      const imp = Math.max(0, Number((tot - sub).toFixed(2)));
+
+      subtotalAcumulado += sub;
+      impuestosTrasladados += imp;
+      granTotal += tot;
+
+      if (f.estado === 'pagado') {
+        montoPagado += tot;
+      } else if (f.estado === 'vencido') {
+        montoVencido += tot;
+      } else {
+        montoPendiente += tot;
+      }
+
+      const provId = f.proveedorId;
+      let grupo = mapaProveedores.get(provId);
+      if (!grupo) {
+        grupo = {
+          proveedorId: provId,
+          rfc: f.proveedor?.rfc || 'SIN-RFC',
+          nombre: f.proveedor?.nombre || 'Proveedor Desconocido',
+          regimenFiscal: f.proveedor?.regimenFiscal || '601',
+          cantidadFacturas: 0,
+          subTotal: 0,
+          impuestos: 0,
+          total: 0,
+        };
+        mapaProveedores.set(provId, grupo);
+      }
+
+      grupo.cantidadFacturas += 1;
+      grupo.subTotal = Number((grupo.subTotal + sub).toFixed(2));
+      grupo.impuestos = Number((grupo.impuestos + imp).toFixed(2));
+      grupo.total = Number((grupo.total + tot).toFixed(2));
+    }
+
+    return {
+      resumen: {
+        totalComprobantes: facturas.length,
+        subtotalAcumulado: Number(subtotalAcumulado.toFixed(2)),
+        impuestosTrasladados: Number(impuestosTrasladados.toFixed(2)),
+        granTotal: Number(granTotal.toFixed(2)),
+        montoPagado: Number(montoPagado.toFixed(2)),
+        montoPendiente: Number(montoPendiente.toFixed(2)),
+        montoVencido: Number(montoVencido.toFixed(2)),
+      },
+      concentradoProveedores: Array.from(mapaProveedores.values()),
+      facturas,
+    };
+  }
 }
