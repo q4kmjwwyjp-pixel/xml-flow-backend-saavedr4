@@ -26,4 +26,17 @@ export class ProveedorController {
   findOne(@Param('rfc') rfc: string) {
     return this.proveedorService.findOne(rfc);
   }
+
+  @Patch(':rfc')
+  update(
+    @Param('rfc') rfc: string,
+    @Body() updateData: { nombre?: string; regimenFiscal?: string }
+  ) {
+    return this.proveedorService.update(rfc, updateData);
+  }
+
+  @Delete(':rfc')
+  remove(@Param('rfc') rfc: string) {
+    return this.proveedorService.remove(rfc);
+  }
 }

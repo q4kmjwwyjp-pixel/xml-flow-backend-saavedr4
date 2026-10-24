@@ -32,4 +32,21 @@ export class ProveedorService {
       }
     })
   }
+
+  update(RFC: string, updateProveedorDto: Partial<{ nombre: string; regimenFiscal: string }>) {
+    return this.prisma.proveedor.update({
+      where: {
+        rfc: RFC
+      },
+      data: updateProveedorDto
+    });
+  }
+
+  remove(RFC: string) {
+    return this.prisma.proveedor.delete({
+      where: {
+        rfc: RFC
+      }
+    });
+  }
 }
