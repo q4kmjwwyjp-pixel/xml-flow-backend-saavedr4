@@ -25,12 +25,13 @@ model Users {
 }
 
 model Proveedor {
-  id            Int          @id @default(autoincrement())
-  rfc           String       @unique
-  nombre        String
-  regimenFiscal String
-  facturas      FacturaXML[]
-  createdAt     DateTime     @default(now())
+  id              Int          @id @default(autoincrement())
+  codigoProveedor String?
+  rfc             String       @unique
+  nombre          String
+  regimenFiscal   String
+  facturas        FacturaXML[]
+  createdAt       DateTime     @default(now())
 }
 
 model FacturaXML {

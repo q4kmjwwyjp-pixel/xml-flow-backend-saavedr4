@@ -1,21 +1,40 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
 import { ProveedorService } from './proveedor.service';
-import { CreateProveedorDto } from './dto/create-proveedor.dto';
-import { UpdateProveedorDto } from './dto/update-proveedor.dto';
 
 @Controller('proveedor')
 export class ProveedorController {
   constructor(private readonly proveedorService: ProveedorService) {}
 
   @Post()
-  create(@Body() proveedorData: {
-    rfc: string,
-    nombre: string,
-    regimenFiscal: string,
-  }) {
+  create(
+    @Body()
+    proveedorData: {
+      codigoProveedor?: string;
+      rfc: string;
+      nombre: string;
+      regimenFiscal: string;
+    }
+  ) {
     return this.proveedorService.create(proveedorData);
   }
 
+  @Post('sync-catalogo')
+  sincronizarCatalogo() {
+    return this.proveedorService.sincronizarCatalogoBase();
+  }
+
+  @Post('bulk')
+  importarLote(
+    @Body('proveedores')
+    proveedores: Array<{
+      codigoProveedor?: string;
+      rfc: string;
+      nombre: string;
+      regimenFiscal?: string;
+    }>
+  ) {
+    return this.proveedorService.importarLote(proveedores || []);
+  }
 
   @Get()
   findAll() {
@@ -30,7 +49,12 @@ export class ProveedorController {
   @Patch(':rfc')
   update(
     @Param('rfc') rfc: string,
-    @Body() updateData: { nombre?: string; regimenFiscal?: string }
+    @Body()
+    updateData: {
+      codigoProveedor?: string;
+      nombre?: string;
+      regimenFiscal?: string;
+    }
   ) {
     return this.proveedorService.update(rfc, updateData);
   }
