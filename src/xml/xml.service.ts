@@ -10,18 +10,28 @@ export class XmlService {
 
   private enriquecerFacturaConCodigo(factura: any) {
     if (!factura) return factura;
+    let codigoFinal: string | null = null;
     if (factura.proveedor) {
       const codigoCatalogo = obtenerDatosCatalogoPorRfc(
         factura.proveedor.rfc
       )?.codigoProveedor;
+      codigoFinal = factura.proveedor.codigoProveedor || codigoCatalogo || null;
       factura.proveedor = {
         ...factura.proveedor,
-        codigoProveedor:
-          factura.proveedor.codigoProveedor || codigoCatalogo || null,
+        codigoProveedor: codigoFinal,
       };
     }
+    const esCredito = factura.metodoPago === 'PPD';
+    const diasCreditoFijos =
+      esCredito && codigoFinal
+        ? factura.diasCredito && factura.diasCredito > 0
+          ? factura.diasCredito
+          : 30
+        : factura.diasCredito || 0;
+
     return {
       ...factura,
+      diasCredito: diasCreditoFijos,
       moneda: (factura.moneda || 'MXN').toUpperCase(),
       folioContrarrecibo: factura.folioContrarrecibo || null,
     };

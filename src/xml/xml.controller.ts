@@ -74,6 +74,11 @@ export class XmlController {
     return this.xmlService.eliminarFactura(uuid);
   }
 
+  @Delete(':uuid')
+  async eliminarFacturaPorParam(@Param('uuid') uuid: string) {
+    return this.xmlService.eliminarFactura(uuid);
+  }
+
   // --- ENDPOINTS PARA ESTADOS Y CONTRARRECIBO ---
 
   @Patch(':uuid/contrarrecibo')
