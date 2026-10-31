@@ -122,17 +122,22 @@ export class XmlService {
           condicionesPago.toLowerCase().includes('credito') ||
           /\b(\d+)\s*d[ií]as?\b/i.test(condicionesPago)));
 
-    if (esCredito && estaRegistradoEnDirectorio && condicionesPago) {
-      const matchDias = condicionesPago.match(/\b(\d+)\s*d[ií]as?\b/i);
-      if (matchDias) {
-        const diasExtraidos = parseInt(matchDias[1], 10);
-        if (!Number.isNaN(diasExtraidos) && diasExtraidos > 0) {
-          diasCredito = diasExtraidos;
-          const fechaCalculada = new Date(fechaEmision);
-          fechaCalculada.setDate(fechaCalculada.getDate() + diasExtraidos);
-          fechaEstimadaPago = fechaCalculada;
+    if (esCredito && estaRegistradoEnDirectorio) {
+      let diasExtraidos = 30;
+      if (condicionesPago) {
+        const matchDias = condicionesPago.match(/\b(\d+)\s*d[ií]as?\b/i);
+        if (matchDias) {
+          const parsed = parseInt(matchDias[1], 10);
+          if (!Number.isNaN(parsed) && parsed > 0) {
+            diasExtraidos = parsed;
+          }
         }
       }
+      diasCredito = diasExtraidos;
+      // Se calcula inicialmente a partir de la fecha de recepción a revisión (hoy)
+      const fechaCalculada = new Date();
+      fechaCalculada.setDate(fechaCalculada.getDate() + diasExtraidos);
+      fechaEstimadaPago = fechaCalculada;
     }
 
     const estadoInicial = esCredito ? 'pendiente' : 'pagado';
