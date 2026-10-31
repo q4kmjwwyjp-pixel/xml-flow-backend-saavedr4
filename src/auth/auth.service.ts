@@ -1,34 +1,58 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { CreateAuthDto } from './dto/create-auth.dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-const bcrypt = require('bcrypt')
+const bcrypt = require('bcrypt');
 
 @Injectable()
 export class AuthService {
-
   constructor(private readonly prismaService: PrismaService) {}
 
-  async authUser(dataAuth: {
-    email: string,
-    password: string
-  }) {
-    const user = await this.prismaService.users.findUnique({
+  async authUser(dataAuth: { email: string; password: string }) {
+    const identificador = (dataAuth.email || '').trim().toLowerCase();
+    const password = dataAuth.password || '';
+
+    // Permitir ingresar solo "admin" o "daniela", o bien el correo completo
+    const emailBusqueda =
+      identificador === 'admin'
+        ? 'admin@xmlflow.com'
+        : identificador === 'daniela'
+          ? 'daniela@xmlflow.com'
+          : identificador;
+
+    const user = await this.prismaService.users.findFirst({
       where: {
-        email: dataAuth.email
-      }
-    })
+        OR: [
+          { email: { equals: emailBusqueda, mode: 'insensitive' } },
+          { email: { equals: identificador, mode: 'insensitive' } },
+          { name: { equals: identificador, mode: 'insensitive' } },
+        ],
+      },
+    });
 
-    if(!user) {
-      throw new BadRequestException('Usuario no encontrado')
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado');
     }
 
-    const response = await bcrypt.compare(dataAuth.password, user.password)
+    const esValido = await bcrypt.compare(password, user.password);
 
-    if(!response) {
-      throw new UnauthorizedException('Error de credenciales')
+    if (!esValido) {
+      throw new UnauthorizedException('Error de credenciales');
     }
 
-    return response
+    const emailLower = user.email.toLowerCase();
+    const esAdmin =
+      emailLower.startsWith('admin') ||
+      user.name.toLowerCase().includes('admin');
+
+    return {
+      authenticated: true,
+      usuario: esAdmin ? 'admin' : 'daniela',
+      nombre: esAdmin ? 'Administrador' : 'Daniela',
+      email: user.email,
+      rol: esAdmin ? 'admin' : 'operador',
+    };
   }
 }

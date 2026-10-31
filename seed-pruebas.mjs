@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import pg from 'pg';
+import bcrypt from 'bcrypt';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
@@ -8,6 +9,37 @@ async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
   try {
+    // Configurar únicamente los 2 usuarios: Admin y Daniela
+    const hashAdmin = await bcrypt.hash('admin123', 10);
+    const hashDaniela = await bcrypt.hash('Dani4829', 10);
+
+    await prisma.users.deleteMany({
+      where: {
+        email: {
+          notIn: ['admin@xmlflow.com', 'daniela@xmlflow.com'],
+        },
+      },
+    });
+
+    await prisma.users.upsert({
+      where: { email: 'admin@xmlflow.com' },
+      update: { name: 'admin', password: hashAdmin },
+      create: { name: 'admin', email: 'admin@xmlflow.com', password: hashAdmin },
+    });
+
+    await prisma.users.upsert({
+      where: { email: 'daniela@xmlflow.com' },
+      update: { name: 'daniela', password: hashDaniela },
+      create: {
+        name: 'daniela',
+        email: 'daniela@xmlflow.com',
+        password: hashDaniela,
+      },
+    });
+
+    console.log(
+      'Usuarios configurados en BD: admin (admin123) y daniela (Dani4829).'
+    );
     const prov1 = await prisma.proveedor.upsert({
       where: { rfc: 'PRU010101AA1' },
       update: {
@@ -163,6 +195,15 @@ async function main() {
       },
     ];
 
+    const borradas = await prisma.facturaXML.deleteMany({
+      where: {
+        NOT: {
+          uuid: { startsWith: 'PRUEBA-UUID-' },
+        },
+      },
+    });
+    console.log(`Facturas anteriores eliminadas: ${borradas.count}`);
+
     for (const item of facturasPrueba) {
       await prisma.facturaXML.upsert({
         where: { uuid: item.uuid },
@@ -170,7 +211,7 @@ async function main() {
         create: item,
       });
     }
-    console.log('5 facturas XML de PRUEBAS insertadas con éxito.');
+    console.log('5 facturas XML de PRUEBAS listas (únicas en la BD).');
   } finally {
     await prisma.$disconnect();
     await pool.end();
