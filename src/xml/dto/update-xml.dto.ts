@@ -5,4 +5,5 @@ export class UpdateXmlDto extends PartialType(CreateXmlDto) {
   estado?: 'pagado' | 'pendiente' | 'vencido';
   folioContrarrecibo?: string | null;
   fechaEstimadaPago?: string | null;
+  diasCredito?: number | null;
 }

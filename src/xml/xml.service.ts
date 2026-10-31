@@ -104,21 +104,35 @@ export class XmlService {
     const formaPago = comprobante['FormaPago'] || null;
     const condicionesPago = comprobante['CondicionesDePago'] || null;
 
-    /// --- LÓGICA DE CRÉDITO Y ESTADO ---
+    /// --- LÓGICA DE CRÉDITO Y ESTADO (SIN ASIGNAR 30 DÍAS POR DEFAULT) ---
     let diasCredito: number | null = null;
     let fechaEstimadaPago: Date | null = null;
+
+    const proveedorExistente = await this.prisma.proveedor.findUnique({
+      where: { rfc: rfcProveedor },
+    });
+    const estaRegistradoEnDirectorio = Boolean(
+      proveedorExistente?.codigoProveedor || codigoProveedorCatalogo
+    );
 
     const esCredito =
       metodoPago === 'PPD' ||
       (condicionesPago &&
         (condicionesPago.toLowerCase().includes('crédito') ||
-          condicionesPago.toLowerCase().includes('credito')));
+          condicionesPago.toLowerCase().includes('credito') ||
+          /\b(\d+)\s*d[ií]as?\b/i.test(condicionesPago)));
 
-    if (esCredito) {
-      diasCredito = 30;
-      const fechaCalculada = new Date(fechaEmision);
-      fechaCalculada.setDate(fechaCalculada.getDate() + 30);
-      fechaEstimadaPago = fechaCalculada;
+    if (esCredito && estaRegistradoEnDirectorio && condicionesPago) {
+      const matchDias = condicionesPago.match(/\b(\d+)\s*d[ií]as?\b/i);
+      if (matchDias) {
+        const diasExtraidos = parseInt(matchDias[1], 10);
+        if (!Number.isNaN(diasExtraidos) && diasExtraidos > 0) {
+          diasCredito = diasExtraidos;
+          const fechaCalculada = new Date(fechaEmision);
+          fechaCalculada.setDate(fechaCalculada.getDate() + diasExtraidos);
+          fechaEstimadaPago = fechaCalculada;
+        }
+      }
     }
 
     const estadoInicial = esCredito ? 'pendiente' : 'pagado';
@@ -221,8 +235,15 @@ export class XmlService {
 
     if (dto.fechaEstimadaPago !== undefined) {
       data.fechaEstimadaPago = dto.fechaEstimadaPago
-        ? new Date(`${dto.fechaEstimadaPago}T12:00:00.000Z`)
+        ? new Date(`${dto.fechaEstimadaPago.split('T')[0]}T12:00:00.000Z`)
         : null;
+    }
+
+    if (dto.diasCredito !== undefined) {
+      data.diasCredito =
+        dto.diasCredito !== null && !Number.isNaN(Number(dto.diasCredito))
+          ? Number(dto.diasCredito)
+          : null;
     }
 
     if (
