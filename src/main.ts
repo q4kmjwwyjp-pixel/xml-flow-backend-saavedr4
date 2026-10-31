@@ -10,14 +10,14 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Control de horario laboral (8:00 AM a 7:00 PM hora CDMX) cuando corre en la nube (Render)
-  // para ahorrar horas de servicio y restringir actividad fuera de horario laboral.
+  // Control opcional de bloqueo estricto fuera de horario (solo si BLOQUEAR_FUERA_DE_HORARIO === 'true').
+  // Por defecto, el ahorro de horas de 8:00 AM a 7:00 PM lo realiza el Cron de GitHub Actions,
+  // dejando que Render entre en suspensión automática tras 15 min de inactividad después de las 7:00 PM.
   app.use((req: Request, res: Response, next: NextFunction) => {
-    const esProduccionNube =
-      process.env.RENDER === 'true' ||
-      process.env.RESTRINGIR_HORARIO === 'true';
-
-    if (!esProduccionNube || req.method === 'OPTIONS') {
+    if (
+      process.env.BLOQUEAR_FUERA_DE_HORARIO !== 'true' ||
+      req.method === 'OPTIONS'
+    ) {
       return next();
     }
 
