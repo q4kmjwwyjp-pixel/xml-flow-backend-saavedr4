@@ -8,7 +8,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 enum XMLEstados {
@@ -18,10 +18,10 @@ enum XMLEstados {
 }
 
 model Users {
-  id            Int           @id @default(autoincrement())
-  name          String
-  email         String        @unique
-  password      String
+  id       Int    @id @default(autoincrement())
+  name     String
+  email    String @unique
+  password String
 }
 
 model Proveedor {
@@ -35,26 +35,28 @@ model Proveedor {
 }
 
 model FacturaXML {
-  id                Int             @id @default(autoincrement())
-  uuid              String          @unique
-  estado            XMLEstados      @default(pendiente)
-  serie             String?
-  folio             String?
-  fechaEmision      DateTime
-  subTotal          Decimal         @db.Decimal(10, 2)
-  total             Decimal         @db.Decimal(10, 2)
-  metodoPago        String
-  formaPago         String?
-  usoCfdi           String
-  regimenReceptor   String
-  condicionesPago   String?
-  diasCredito       Int?           
-  estadoValidacion  String         
-  
-  fechaEstimadaPago DateTime?       
-  
-  proveedorId       Int
-  proveedor         Proveedor       @relation(fields: [proveedorId], references: [id])
-  
-  createdAt         DateTime        @default(now())
+  id                 Int        @id @default(autoincrement())
+  uuid               String     @unique
+  estado             XMLEstados @default(pendiente)
+  serie              String?
+  folio              String?
+  fechaEmision       DateTime
+  subTotal           Decimal    @db.Decimal(10, 2)
+  total              Decimal    @db.Decimal(10, 2)
+  moneda             String     @default("MXN")
+  metodoPago         String
+  formaPago          String?
+  usoCfdi            String
+  regimenReceptor    String
+  condicionesPago    String?
+  diasCredito        Int?
+  estadoValidacion   String
+  folioContrarrecibo String?
+
+  fechaEstimadaPago  DateTime?
+
+  proveedorId        Int
+  proveedor          Proveedor  @relation(fields: [proveedorId], references: [id])
+
+  createdAt          DateTime   @default(now())
 }

@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
   CATALOGO_PROVEEDORES,
@@ -10,6 +15,15 @@ export class ProveedorService implements OnModuleInit {
   private sincronizando = false;
 
   constructor(private prisma: PrismaService) {}
+
+  private normalizarTexto(valor?: string | null): string {
+    return (valor || '').trim().replace(/\s+/g, ' ').toUpperCase();
+  }
+
+  private normalizarCodigo(valor?: string | null): string {
+    const limpio = (valor || '').trim().replace(/^#+/, '').trim().toUpperCase();
+    return limpio === 'S/N' ? '' : limpio;
+  }
 
   async onModuleInit() {
     this.sincronizarCatalogoBase().catch((err) =>
@@ -75,41 +89,75 @@ export class ProveedorService implements OnModuleInit {
       regimenFiscal?: string;
     }>
   ) {
-    let procesados = 0;
+    const existentes = await this.findAll();
+    const codigosOcupados = new Set<string>();
+    const rfcsOcupados = new Set<string>();
+    const nombresOcupados = new Set<string>();
+
+    for (const ex of existentes) {
+      const cod = this.normalizarCodigo(ex.codigoProveedor);
+      const rfc = this.normalizarTexto(ex.rfc);
+      const nom = this.normalizarTexto(ex.nombre);
+      if (cod) codigosOcupados.add(cod);
+      if (rfc) rfcsOcupados.add(rfc);
+      if (nom) nombresOcupados.add(nom);
+    }
+
+    let nuevosInsertados = 0;
+    let omitidosPorDuplicado = 0;
+
     for (const p of proveedores) {
       const rfc = (p.rfc || '').trim().toUpperCase();
-      const nombre = (p.nombre || '').trim();
+      const nombre = (p.nombre || '').trim().replace(/\s+/g, ' ');
       if (!rfc || !nombre) continue;
 
+      const codigoInput = (p.codigoProveedor || '')
+        .trim()
+        .replace(/^#+/, '')
+        .trim();
       const delCatalogo = obtenerDatosCatalogoPorRfc(rfc);
       const codigoProveedor =
-        (p.codigoProveedor || '').trim() ||
-        delCatalogo?.codigoProveedor ||
-        null;
+        codigoInput || delCatalogo?.codigoProveedor || null;
+
+      const codNorm = this.normalizarCodigo(codigoProveedor);
+      const rfcNorm = this.normalizarTexto(rfc);
+      const nomNorm = this.normalizarTexto(nombre);
+
+      // Si ya existe por Código de Proveedor, RFC o Razón Social, no se duplica
+      if (
+        (codNorm && codigosOcupados.has(codNorm)) ||
+        rfcsOcupados.has(rfcNorm) ||
+        nombresOcupados.has(nomNorm)
+      ) {
+        omitidosPorDuplicado++;
+        continue;
+      }
+
+      if (codNorm) codigosOcupados.add(codNorm);
+      rfcsOcupados.add(rfcNorm);
+      nombresOcupados.add(nomNorm);
+
       const regimenFiscal =
         (p.regimenFiscal || '').trim() ||
         delCatalogo?.regimenFiscal ||
         (rfc.length === 12 ? '601' : '612');
 
-      await this.prisma.proveedor.upsert({
-        where: { rfc },
-        update: {
-          nombre,
-          regimenFiscal,
-          ...(codigoProveedor ? { codigoProveedor } : {}),
-        },
-        create: {
+      await this.prisma.proveedor.create({
+        data: {
           rfc,
           nombre,
           regimenFiscal,
           codigoProveedor,
         },
       });
-      procesados++;
+      nuevosInsertados++;
     }
+
     return {
-      mensaje: 'Proveedores importados correctamente',
-      procesados,
+      mensaje: 'Proveedores procesados sin duplicados',
+      nuevosInsertados,
+      omitidosPorDuplicado,
+      procesados: nuevosInsertados,
     };
   }
 
@@ -119,31 +167,78 @@ export class ProveedorService implements OnModuleInit {
     nombre: string;
     regimenFiscal: string;
   }) {
-    const rfc = proveedorData.rfc.trim().toUpperCase();
-    const delCatalogo = obtenerDatosCatalogoPorRfc(rfc);
-    const codigoProveedor =
-      (proveedorData.codigoProveedor || '').trim() ||
-      delCatalogo?.codigoProveedor ||
-      null;
+    const rfc = (proveedorData.rfc || '').trim().toUpperCase();
+    const nombre = (proveedorData.nombre || '')
+      .replace(/,/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toUpperCase();
+    const codigoInput = (proveedorData.codigoProveedor || '')
+      .trim()
+      .replace(/^#+/, '')
+      .trim();
 
-    return this.prisma.proveedor.upsert({
-      where: { rfc },
-      update: {
-        nombre: proveedorData.nombre.trim(),
-        regimenFiscal:
-          proveedorData.regimenFiscal?.trim() ||
-          delCatalogo?.regimenFiscal ||
-          (rfc.length === 12 ? '601' : '612'),
-        ...(codigoProveedor ? { codigoProveedor } : {}),
-      },
-      create: {
-        codigoProveedor,
+    if (!rfc || !nombre) {
+      throw new BadRequestException(
+        'El RFC y la Razón Social (Apellidos Nombre) son obligatorios.'
+      );
+    }
+
+    if (nombre.split(' ').filter((w) => w.length > 0).length < 2) {
+      throw new BadRequestException(
+        'Debes ingresar el nombre bajo el formato "Apellidos Nombre" (mínimo un apellido y un nombre).'
+      );
+    }
+
+    const codigoNorm = this.normalizarCodigo(codigoInput);
+    const rfcNorm = this.normalizarTexto(rfc);
+    const nombreNorm = this.normalizarTexto(nombre);
+
+    const existentes = await this.findAll();
+    const errores: string[] = [];
+
+    if (codigoNorm) {
+      const dupCodigo = existentes.find(
+        (p) => this.normalizarCodigo(p.codigoProveedor) === codigoNorm
+      );
+      if (dupCodigo) {
+        errores.push(
+          `El N° de Proveedor (Clave) "${codigoInput}" ya está ocupado por "${dupCodigo.nombre}".`
+        );
+      }
+    }
+
+    const dupRfc = existentes.find(
+      (p) => this.normalizarTexto(p.rfc) === rfcNorm
+    );
+    if (dupRfc) {
+      errores.push(
+        `El RFC "${rfc}" ya está registrado (${dupRfc.nombre}).`
+      );
+    }
+
+    const dupNombre = existentes.find(
+      (p) => this.normalizarTexto(p.nombre) === nombreNorm
+    );
+    if (dupNombre) {
+      errores.push(
+        `La Razón Social "${nombre}" ya está registrada (RFC: ${dupNombre.rfc}).`
+      );
+    }
+
+    if (errores.length > 0) {
+      throw new ConflictException(errores.join(' '));
+    }
+
+    const regimenFiscal =
+      proveedorData.regimenFiscal?.trim() || (rfc.length === 12 ? '601' : '612');
+
+    return this.prisma.proveedor.create({
+      data: {
+        codigoProveedor: codigoInput || null,
         rfc,
-        nombre: proveedorData.nombre.trim(),
-        regimenFiscal:
-          proveedorData.regimenFiscal?.trim() ||
-          delCatalogo?.regimenFiscal ||
-          (rfc.length === 12 ? '601' : '612'),
+        nombre,
+        regimenFiscal,
       },
     });
   }
@@ -173,11 +268,38 @@ export class ProveedorService implements OnModuleInit {
       });
     }
 
-    return Array.from(mapaPorRfc.values()).sort((a, b) => {
+    // Garantizar que no existan duplicados por código de proveedor ni por razón social
+    const codigosVistos = new Set<string>();
+    const nombresVistos = new Set<string>();
+    const unicos: any[] = [];
+
+    for (const p of mapaPorRfc.values()) {
+      const codNorm = this.normalizarCodigo(p.codigoProveedor);
+      const nomNorm = this.normalizarTexto(p.nombre);
+
+      if (
+        (codNorm && codigosVistos.has(codNorm)) ||
+        (nomNorm && nombresVistos.has(nomNorm))
+      ) {
+        continue;
+      }
+
+      if (codNorm) codigosVistos.add(codNorm);
+      if (nomNorm) nombresVistos.add(nomNorm);
+      unicos.push(p);
+    }
+
+    return unicos.sort((a, b) => {
       const numA = Number(a.codigoProveedor);
       const numB = Number(b.codigoProveedor);
-      const validA = !Number.isNaN(numA) && a.codigoProveedor != null && a.codigoProveedor !== '';
-      const validB = !Number.isNaN(numB) && b.codigoProveedor != null && b.codigoProveedor !== '';
+      const validA =
+        !Number.isNaN(numA) &&
+        a.codigoProveedor != null &&
+        a.codigoProveedor !== '';
+      const validB =
+        !Number.isNaN(numB) &&
+        b.codigoProveedor != null &&
+        b.codigoProveedor !== '';
       if (validA && validB) return numA - numB;
       if (validA) return -1;
       if (validB) return 1;
@@ -213,16 +335,68 @@ export class ProveedorService implements OnModuleInit {
     }>
   ) {
     const rfcUpper = RFC.trim().toUpperCase();
+    const rfcNorm = this.normalizarTexto(rfcUpper);
     const delCatalogo = obtenerDatosCatalogoPorRfc(rfcUpper);
     const data: Record<string, any> = {};
-    if (updateProveedorDto.nombre !== undefined) {
-      data.nombre = updateProveedorDto.nombre.trim();
+
+    const existentes = await this.findAll();
+    const otrosProveedores = existentes.filter(
+      (p) => this.normalizarTexto(p.rfc) !== rfcNorm
+    );
+    const errores: string[] = [];
+
+    if (updateProveedorDto.codigoProveedor !== undefined) {
+      const codigoInput = updateProveedorDto.codigoProveedor
+        .trim()
+        .replace(/^#+/, '')
+        .trim();
+      const codigoNorm = this.normalizarCodigo(codigoInput);
+
+      if (codigoNorm) {
+        const dupCodigo = otrosProveedores.find(
+          (p) => this.normalizarCodigo(p.codigoProveedor) === codigoNorm
+        );
+        if (dupCodigo) {
+          errores.push(
+            `El N° de Proveedor (Clave) "${codigoInput}" ya está ocupado por "${dupCodigo.nombre}".`
+          );
+        }
+      }
+      data.codigoProveedor = codigoInput || null;
     }
+
+    if (updateProveedorDto.nombre !== undefined) {
+      const nombreLimpio = updateProveedorDto.nombre
+        .replace(/,/g, ' ')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toUpperCase();
+      if (nombreLimpio.split(' ').filter((w) => w.length > 0).length < 2) {
+        throw new BadRequestException(
+          'Debes ingresar el nombre bajo el formato "Apellidos Nombre" (mínimo un apellido y un nombre).'
+        );
+      }
+      const nombreNorm = this.normalizarTexto(nombreLimpio);
+
+      if (nombreNorm) {
+        const dupNombre = otrosProveedores.find(
+          (p) => this.normalizarTexto(p.nombre) === nombreNorm
+        );
+        if (dupNombre) {
+          errores.push(
+            `La Razón Social "${nombreLimpio}" ya está registrada (RFC: ${dupNombre.rfc}).`
+          );
+        }
+      }
+      data.nombre = nombreLimpio;
+    }
+
+    if (errores.length > 0) {
+      throw new ConflictException(errores.join(' '));
+    }
+
     if (updateProveedorDto.regimenFiscal !== undefined) {
       data.regimenFiscal = updateProveedorDto.regimenFiscal.trim();
-    }
-    if (updateProveedorDto.codigoProveedor !== undefined) {
-      data.codigoProveedor = updateProveedorDto.codigoProveedor.trim() || null;
     }
 
     return this.prisma.proveedor.upsert({

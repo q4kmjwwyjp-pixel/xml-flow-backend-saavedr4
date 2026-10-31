@@ -1,0 +1,28 @@
+name: Horario Laboral (8 AM a 7 PM) - Ahorro de Horas Render
+
+on:
+  schedule:
+    # Ejecuta cada 14 minutos durante las horas UTC correspondientes a 8:00 AM - 6:59 PM (Hora CDMX UTC-6)
+    - cron: '*/14 14-23 * * 1-6'
+    - cron: '*/14 0 * * 2-7'
+  workflow_dispatch:
+
+jobs:
+  mantener-activo-horario-laboral:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar horario CDMX (8:00 AM a 7:00 PM) y despertar servidor
+        env:
+          TZ: America/Mexico_City
+          BACKEND_URL: ${{ vars.RENDER_BACKEND_URL || 'https://xml-flow-backend-saavedr4.onrender.com' }}
+        run: |
+          HORA_ACTUAL=$(date +%H)
+          HORA_NUM=$((10#$HORA_ACTUAL))
+          echo "Hora actual en Ciudad de México: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+
+          if [ "$HORA_NUM" -ge 8 ] && [ "$HORA_NUM" -lt 19 ]; then
+            echo "✅ Dentro de horario laboral (8:00 AM - 7:00 PM). Enviando ping a $BACKEND_URL/health ..."
+            curl -s -o /dev/null -w "Respuesta HTTP: %{http_code}\n" "$BACKEND_URL/health" || true
+          else
+            echo "🌙 Fuera de horario laboral (7:00 PM - 8:00 AM). No se envía ping para que Render se apague y ahorre horas."
+          fi

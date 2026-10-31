@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { XMLParser } from 'fast-xml-parser';
 import { PrismaService } from '../prisma/prisma.service';
 import { obtenerDatosCatalogoPorRfc } from '../proveedor/catalogo-proveedores.data';
+import { UpdateXmlDto } from './dto/update-xml.dto';
 
 @Injectable()
 export class XmlService {
@@ -19,7 +20,11 @@ export class XmlService {
           factura.proveedor.codigoProveedor || codigoCatalogo || null,
       };
     }
-    return factura;
+    return {
+      ...factura,
+      moneda: (factura.moneda || 'MXN').toUpperCase(),
+      folioContrarrecibo: factura.folioContrarrecibo || null,
+    };
   }
 
   async procesarYValidarXml(xmlString: string) {
@@ -88,15 +93,21 @@ export class XmlService {
     const fechaEmision = new Date(comprobante['Fecha']);
     const subTotal = comprobante['SubTotal'];
     const total = comprobante['Total'];
+    const monedaRaw = String(comprobante['Moneda'] || 'MXN')
+      .trim()
+      .toUpperCase();
+    const moneda =
+      monedaRaw === 'USD' || monedaRaw === 'DOLARES' || monedaRaw === 'DÓLARES'
+        ? 'USD'
+        : 'MXN';
     const metodoPago = comprobante['MetodoPago'];
     const formaPago = comprobante['FormaPago'] || null;
     const condicionesPago = comprobante['CondicionesDePago'] || null;
 
-    /// --- NUEVA LÓGICA DE CRÉDITO Y ESTADO ---
+    /// --- LÓGICA DE CRÉDITO Y ESTADO ---
     let diasCredito: number | null = null;
     let fechaEstimadaPago: Date | null = null;
 
-    // Detectar crédito por PPD o texto en condiciones
     const esCredito =
       metodoPago === 'PPD' ||
       (condicionesPago &&
@@ -105,14 +116,11 @@ export class XmlService {
 
     if (esCredito) {
       diasCredito = 30;
-
       const fechaCalculada = new Date(fechaEmision);
       fechaCalculada.setDate(fechaCalculada.getDate() + 30);
-
       fechaEstimadaPago = fechaCalculada;
     }
 
-    // Definimos el estado inicial según si es crédito o no
     const estadoInicial = esCredito ? 'pendiente' : 'pagado';
 
     try {
@@ -141,6 +149,7 @@ export class XmlService {
           fechaEmision,
           subTotal,
           total,
+          moneda,
           metodoPago,
           formaPago,
           usoCfdi,
@@ -175,7 +184,7 @@ export class XmlService {
       include: {
         proveedor: true,
       },
-      orderBy: { fechaEmision: 'desc' },
+      orderBy: [{ folioContrarrecibo: 'asc' }, { fechaEmision: 'desc' }],
     });
     return facturas.map((f) => this.enriquecerFacturaConCodigo(f));
   }
@@ -198,25 +207,70 @@ export class XmlService {
     });
   }
 
-  // --- NUEVAS FUNCIONES PARA CAMBIO DE ESTADO ---
+  // --- ACTUALIZACIÓN MANUAL DE ESTADO Y FOLIO DE CONTRARRECIBO ---
 
-  async marcarComoPagado(uuid: string) {
+  async actualizarContrarrecibo(uuid: string, dto: UpdateXmlDto) {
     await this.obtenerFacturaPorUuid(uuid);
+
+    const data: Record<string, any> = {};
+
+    if (dto.folioContrarrecibo !== undefined) {
+      const limpio = (dto.folioContrarrecibo || '').trim();
+      data.folioContrarrecibo = limpio.length > 0 ? limpio : null;
+    }
+
+    if (dto.fechaEstimadaPago !== undefined) {
+      data.fechaEstimadaPago = dto.fechaEstimadaPago
+        ? new Date(`${dto.fechaEstimadaPago}T12:00:00.000Z`)
+        : null;
+    }
+
+    if (
+      dto.estado === 'pagado' ||
+      dto.estado === 'pendiente' ||
+      dto.estado === 'vencido'
+    ) {
+      data.estado = dto.estado;
+    }
 
     const actualizada = await this.prisma.facturaXML.update({
       where: { uuid },
-      data: { estado: 'pagado' },
+      data,
+      include: { proveedor: true },
+    });
+
+    return this.enriquecerFacturaConCodigo(actualizada);
+  }
+
+  async marcarComoPagado(uuid: string, folioContrarrecibo?: string) {
+    await this.obtenerFacturaPorUuid(uuid);
+
+    const data: Record<string, any> = { estado: 'pagado' };
+    if (folioContrarrecibo !== undefined) {
+      const limpio = (folioContrarrecibo || '').trim();
+      data.folioContrarrecibo = limpio.length > 0 ? limpio : null;
+    }
+
+    const actualizada = await this.prisma.facturaXML.update({
+      where: { uuid },
+      data,
       include: { proveedor: true },
     });
     return this.enriquecerFacturaConCodigo(actualizada);
   }
 
-  async marcarComoVencido(uuid: string) {
+  async marcarComoVencido(uuid: string, folioContrarrecibo?: string) {
     await this.obtenerFacturaPorUuid(uuid);
+
+    const data: Record<string, any> = { estado: 'vencido' };
+    if (folioContrarrecibo !== undefined) {
+      const limpio = (folioContrarrecibo || '').trim();
+      data.folioContrarrecibo = limpio.length > 0 ? limpio : null;
+    }
 
     const actualizada = await this.prisma.facturaXML.update({
       where: { uuid },
-      data: { estado: 'vencido' },
+      data,
       include: { proveedor: true },
     });
     return this.enriquecerFacturaConCodigo(actualizada);
@@ -228,6 +282,10 @@ export class XmlService {
     criterio?: 'pago' | 'emision' | 'recepcion';
     estado?: string;
     metodoPago?: string;
+    moneda?: string;
+    folioContrarrecibo?: string;
+    soloConContrarrecibo?: string;
+    ordenFolio?: 'asc' | 'desc';
   }) {
     const where: any = {};
 
@@ -240,6 +298,22 @@ export class XmlService {
 
     if (filtros.metodoPago && filtros.metodoPago.toUpperCase() !== 'TODAS') {
       where.metodoPago = filtros.metodoPago.toUpperCase();
+    }
+
+    if (filtros.moneda && filtros.moneda.toUpperCase() !== 'TODAS') {
+      where.moneda = filtros.moneda.toUpperCase();
+    }
+
+    if (filtros.folioContrarrecibo && filtros.folioContrarrecibo.trim()) {
+      where.folioContrarrecibo = {
+        contains: filtros.folioContrarrecibo.trim(),
+        mode: 'insensitive',
+      };
+    } else if (filtros.soloConContrarrecibo === 'true') {
+      where.AND = [
+        { folioContrarrecibo: { not: null } },
+        { folioContrarrecibo: { not: '' } },
+      ];
     }
 
     if (filtros.fechaInicio || filtros.fechaFin) {
@@ -260,13 +334,34 @@ export class XmlService {
       }
     }
 
+    const dirFolio = filtros.ordenFolio === 'desc' ? 'desc' : 'asc';
+
     const facturasRaw = await this.prisma.facturaXML.findMany({
       where,
       include: { proveedor: true },
-      orderBy: { fechaEmision: 'desc' },
+      orderBy: [
+        { folioContrarrecibo: dirFolio },
+        { fechaEstimadaPago: 'asc' },
+        { fechaEmision: 'asc' },
+      ],
     });
 
     const facturas = facturasRaw.map((f) => this.enriquecerFacturaConCodigo(f));
+
+    // Ordenar garantizando que las que tienen folioContrarrecibo queden agrupadas consecutivamente
+    facturas.sort((a, b) => {
+      const folioA = (a.folioContrarrecibo || '').trim();
+      const folioB = (b.folioContrarrecibo || '').trim();
+      if (folioA && !folioB) return -1;
+      if (!folioA && folioB) return 1;
+      if (folioA && folioB && folioA !== folioB) {
+        const cmp = folioA.localeCompare(folioB, 'es', { numeric: true });
+        return dirFolio === 'desc' ? -cmp : cmp;
+      }
+      const fechaA = a.fechaEstimadaPago || a.fechaEmision || '';
+      const fechaB = b.fechaEstimadaPago || b.fechaEmision || '';
+      return String(fechaA).localeCompare(String(fechaB));
+    });
 
     let subtotalAcumulado = 0;
     let impuestosTrasladados = 0;

@@ -1,20 +1,34 @@
-import { Controller, Delete, Get, Post, Param, Req, Body, BadRequestException, Patch, Query } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Param,
+  Req,
+  Body,
+  BadRequestException,
+  Patch,
+  Query,
+} from '@nestjs/common';
 import { XmlService } from './xml.service';
+import { UpdateXmlDto } from './dto/update-xml.dto';
 
 @Controller('xml')
 export class XmlController {
-  constructor(private readonly xmlService: XmlService) { }
+  constructor(private readonly xmlService: XmlService) {}
 
   @Post('upload')
   async uploadXml(@Req() req: any) {
     let xmlString = '';
-    
+
     for await (const chunk of req) {
       xmlString += chunk;
     }
 
     if (!xmlString || xmlString.trim() === '') {
-      throw new BadRequestException('El cuerpo de la petición está vacío o no contiene un XML válido');
+      throw new BadRequestException(
+        'El cuerpo de la petición está vacío o no contiene un XML válido'
+      );
     }
 
     return this.xmlService.procesarYValidarXml(xmlString);
@@ -32,6 +46,10 @@ export class XmlController {
     @Query('criterio') criterio?: 'pago' | 'emision' | 'recepcion',
     @Query('estado') estado?: string,
     @Query('metodoPago') metodoPago?: string,
+    @Query('moneda') moneda?: string,
+    @Query('folioContrarrecibo') folioContrarrecibo?: string,
+    @Query('soloConContrarrecibo') soloConContrarrecibo?: string,
+    @Query('ordenFolio') ordenFolio?: 'asc' | 'desc'
   ) {
     return this.xmlService.generarReporteSemanal({
       fechaInicio,
@@ -39,6 +57,10 @@ export class XmlController {
       criterio,
       estado,
       metodoPago,
+      moneda,
+      folioContrarrecibo,
+      soloConContrarrecibo,
+      ordenFolio,
     });
   }
 
@@ -49,18 +71,40 @@ export class XmlController {
 
   @Delete('delete')
   async eliminarFactura(@Body('uuid') uuid: string) {
-    return this.xmlService.eliminarFactura(uuid)
+    return this.xmlService.eliminarFactura(uuid);
   }
 
-  // --- NUEVOS ENDPOINTS PARA ESTADOS ---
+  // --- ENDPOINTS PARA ESTADOS Y CONTRARRECIBO ---
+
+  @Patch(':uuid/contrarrecibo')
+  async actualizarContrarrecibo(
+    @Param('uuid') uuid: string,
+    @Body() updateXmlDto: UpdateXmlDto
+  ) {
+    return this.xmlService.actualizarContrarrecibo(uuid, updateXmlDto);
+  }
+
+  @Patch(':uuid')
+  async actualizarManual(
+    @Param('uuid') uuid: string,
+    @Body() updateXmlDto: UpdateXmlDto
+  ) {
+    return this.xmlService.actualizarContrarrecibo(uuid, updateXmlDto);
+  }
 
   @Patch(':uuid/pagado')
-  async marcarComoPagado(@Param('uuid') uuid: string) {
-    return this.xmlService.marcarComoPagado(uuid);
+  async marcarComoPagado(
+    @Param('uuid') uuid: string,
+    @Body('folioContrarrecibo') folioContrarrecibo?: string
+  ) {
+    return this.xmlService.marcarComoPagado(uuid, folioContrarrecibo);
   }
 
   @Patch(':uuid/vencido')
-  async marcarComoVencido(@Param('uuid') uuid: string) {
-    return this.xmlService.marcarComoVencido(uuid);
+  async marcarComoVencido(
+    @Param('uuid') uuid: string,
+    @Body('folioContrarrecibo') folioContrarrecibo?: string
+  ) {
+    return this.xmlService.marcarComoVencido(uuid, folioContrarrecibo);
   }
 }
