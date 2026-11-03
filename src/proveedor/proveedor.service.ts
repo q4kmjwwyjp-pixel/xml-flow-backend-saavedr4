@@ -254,6 +254,7 @@ export class ProveedorService implements OnModuleInit {
         rfc: item.rfc,
         nombre: item.nombre,
         regimenFiscal: item.regimenFiscal,
+        diasCredito: item.diasCredito ?? 0,
       });
     }
 
@@ -265,6 +266,7 @@ export class ProveedorService implements OnModuleInit {
         ...p,
         codigoProveedor:
           p.codigoProveedor || previo?.codigoProveedor || null,
+        diasCredito: previo?.diasCredito ?? null,
       });
     }
 

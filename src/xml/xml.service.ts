@@ -11,23 +11,56 @@ export class XmlService {
   private enriquecerFacturaConCodigo(factura: any) {
     if (!factura) return factura;
     let codigoFinal: string | null = null;
+    let diasCatalogo: number | null = null;
+
     if (factura.proveedor) {
-      const codigoCatalogo = obtenerDatosCatalogoPorRfc(
-        factura.proveedor.rfc
-      )?.codigoProveedor;
+      const datosCatalogo = obtenerDatosCatalogoPorRfc(factura.proveedor.rfc);
+      const codigoCatalogo = datosCatalogo?.codigoProveedor;
       codigoFinal = factura.proveedor.codigoProveedor || codigoCatalogo || null;
+      diasCatalogo =
+        datosCatalogo?.diasCredito !== undefined &&
+        datosCatalogo?.diasCredito !== null
+          ? Number(datosCatalogo.diasCredito)
+          : null;
+
       factura.proveedor = {
         ...factura.proveedor,
         codigoProveedor: codigoFinal,
+        diasCredito: diasCatalogo,
       };
     }
-    const esCredito = factura.metodoPago === 'PPD';
-    const diasCreditoFijos =
-      esCredito && codigoFinal
-        ? factura.diasCredito && factura.diasCredito > 0
-          ? factura.diasCredito
-          : 30
-        : factura.diasCredito || 0;
+
+    let diasEnXml: number | null = null;
+    if (factura.condicionesPago) {
+      const match = String(factura.condicionesPago).match(
+        /\b(\d+)\s*d[ií]as?\b/i
+      );
+      if (match) {
+        const parsed = parseInt(match[1], 10);
+        if (!Number.isNaN(parsed) && parsed >= 0) {
+          diasEnXml = parsed;
+        }
+      }
+    }
+
+    const condiciones = String(factura.condicionesPago || '').toLowerCase();
+    const esCredito =
+      factura.metodoPago === 'PPD' ||
+      (diasEnXml !== null && diasEnXml > 0) ||
+      condiciones.includes('crédito') ||
+      condiciones.includes('credito');
+    let diasCreditoFijos = 0;
+
+    if (diasEnXml !== null) {
+      diasCreditoFijos = diasEnXml;
+    } else if (esCredito && codigoFinal) {
+      diasCreditoFijos =
+        diasCatalogo !== null
+          ? diasCatalogo
+          : factura.diasCredito && factura.diasCredito > 0
+            ? Number(factura.diasCredito)
+            : 0;
+    }
 
     return {
       ...factura,
@@ -114,7 +147,7 @@ export class XmlService {
     const formaPago = comprobante['FormaPago'] || null;
     const condicionesPago = comprobante['CondicionesDePago'] || null;
 
-    /// --- LÓGICA DE CRÉDITO Y ESTADO (SIN ASIGNAR 30 DÍAS POR DEFAULT) ---
+    /// --- LÓGICA DE CRÉDITO: 1° XML -> 2° LISTA DE PROVEEDORES (Cond. Pag./Prov.) -> 3° SIN REGISTRO ---
     let diasCredito: number | null = null;
     let fechaEstimadaPago: Date | null = null;
 
@@ -125,28 +158,39 @@ export class XmlService {
       proveedorExistente?.codigoProveedor || codigoProveedorCatalogo
     );
 
-    const esCredito =
-      metodoPago === 'PPD' ||
-      (condicionesPago &&
-        (condicionesPago.toLowerCase().includes('crédito') ||
-          condicionesPago.toLowerCase().includes('credito') ||
-          /\b(\d+)\s*d[ií]as?\b/i.test(condicionesPago)));
-
-    if (esCredito && estaRegistradoEnDirectorio) {
-      let diasExtraidos = 30;
-      if (condicionesPago) {
-        const matchDias = condicionesPago.match(/\b(\d+)\s*d[ií]as?\b/i);
-        if (matchDias) {
-          const parsed = parseInt(matchDias[1], 10);
-          if (!Number.isNaN(parsed) && parsed > 0) {
-            diasExtraidos = parsed;
-          }
+    let diasEnXml: number | null = null;
+    if (condicionesPago) {
+      const matchDias = condicionesPago.match(/\b(\d+)\s*d[ií]as?\b/i);
+      if (matchDias) {
+        const parsed = parseInt(matchDias[1], 10);
+        if (!Number.isNaN(parsed) && parsed >= 0) {
+          diasEnXml = parsed;
         }
       }
-      diasCredito = diasExtraidos;
-      // Se calcula inicialmente a partir de la fecha de recepción a revisión (hoy)
+    }
+
+    const diasEnListaProveedor =
+      datosCatalogo?.diasCredito !== undefined &&
+      datosCatalogo?.diasCredito !== null
+        ? Number(datosCatalogo.diasCredito)
+        : null;
+
+    const esCredito =
+      metodoPago === 'PPD' ||
+      (diasEnXml !== null && diasEnXml > 0) ||
+      (condicionesPago &&
+        (condicionesPago.toLowerCase().includes('crédito') ||
+          condicionesPago.toLowerCase().includes('credito')));
+
+    if (diasEnXml !== null) {
+      diasCredito = diasEnXml;
+    } else if (esCredito && estaRegistradoEnDirectorio && diasEnListaProveedor !== null) {
+      diasCredito = diasEnListaProveedor;
+    }
+
+    if (diasCredito !== null && diasCredito > 0) {
       const fechaCalculada = new Date();
-      fechaCalculada.setDate(fechaCalculada.getDate() + diasExtraidos);
+      fechaCalculada.setDate(fechaCalculada.getDate() + diasCredito);
       fechaEstimadaPago = fechaCalculada;
     }
 
