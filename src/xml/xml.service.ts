@@ -129,8 +129,19 @@ export class XmlService {
       emisor['RegimenFiscal'] || datosCatalogo?.regimenFiscal || '601';
     const codigoProveedorCatalogo = datosCatalogo?.codigoProveedor || null;
 
-    const usoCfdi = receptor['UsoCFDI'];
-    const regimenReceptor = receptor['RegimenFiscalReceptor'];
+    const rfcReceptor = String(receptor['Rfc'] || '')
+      .trim()
+      .toUpperCase();
+    const nombreReceptor = String(receptor['Nombre'] || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toUpperCase();
+    const usoCfdi = String(receptor['UsoCFDI'] || '')
+      .trim()
+      .toUpperCase();
+    const regimenReceptor = String(
+      receptor['RegimenFiscalReceptor'] || ''
+    ).trim();
     const serie = comprobante['Serie'] || null;
     const folio = comprobante['Folio'] || null;
     const fechaEmision = new Date(comprobante['Fecha']);
@@ -143,9 +154,50 @@ export class XmlService {
       monedaRaw === 'USD' || monedaRaw === 'DOLARES' || monedaRaw === 'DÓLARES'
         ? 'USD'
         : 'MXN';
-    const metodoPago = comprobante['MetodoPago'];
-    const formaPago = comprobante['FormaPago'] || null;
+    const metodoPago = String(comprobante['MetodoPago'] || '')
+      .trim()
+      .toUpperCase();
+    const formaPago = comprobante['FormaPago']
+      ? String(comprobante['FormaPago']).trim()
+      : null;
     const condicionesPago = comprobante['CondicionesDePago'] || null;
+
+    const erroresValidacion: string[] = [];
+    if (rfcReceptor !== 'TSH731116TL4') {
+      erroresValidacion.push(
+        `RFC Receptor inválido (${rfcReceptor || 'Vacío'} != TSH731116TL4)`
+      );
+    }
+    if (nombreReceptor !== 'TRANSPORTES DE LOS SANTOS E HIJOS') {
+      erroresValidacion.push(
+        `Razón Social Receptor inválida (${nombreReceptor || 'Vacío'} != TRANSPORTES DE LOS SANTOS E HIJOS)`
+      );
+    }
+    if (regimenReceptor !== '624') {
+      erroresValidacion.push(
+        `Régimen Fiscal Receptor inválido (${regimenReceptor || 'Vacío'} != 624)`
+      );
+    }
+    if (usoCfdi !== 'G03') {
+      erroresValidacion.push(
+        `Uso CFDI inválido (${usoCfdi || 'Vacío'} != G03)`
+      );
+    }
+    if (metodoPago !== 'PPD' && metodoPago !== 'PUE') {
+      erroresValidacion.push(
+        `Método de pago inválido (${metodoPago || 'Vacío'})`
+      );
+    }
+    if (formaPago !== '99' && formaPago !== '03') {
+      erroresValidacion.push(
+        `Forma de pago inválida (${formaPago || 'Vacío'} != 99 o 03)`
+      );
+    }
+    if (erroresValidacion.length > 0) {
+      throw new BadRequestException(
+        `Comprobante rechazado: ${erroresValidacion.join(' | ')}`
+      );
+    }
 
     /// --- LÓGICA DE CRÉDITO: 1° XML -> 2° LISTA DE PROVEEDORES (Cond. Pag./Prov.) -> 3° SIN REGISTRO ---
     let diasCredito: number | null = null;
