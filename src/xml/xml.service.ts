@@ -136,6 +136,9 @@ export class XmlService {
       .replace(/\s+/g, ' ')
       .trim()
       .toUpperCase();
+    const domicilioReceptor = String(
+      receptor['DomicilioFiscalReceptor'] || ''
+    ).trim();
     const usoCfdi = String(receptor['UsoCFDI'] || '')
       .trim()
       .toUpperCase();
@@ -171,6 +174,11 @@ export class XmlService {
     if (nombreReceptor !== 'TRANSPORTES DE LOS SANTOS E HIJOS') {
       erroresValidacion.push(
         `Razón Social Receptor inválida (${nombreReceptor || 'Vacío'} != TRANSPORTES DE LOS SANTOS E HIJOS)`
+      );
+    }
+    if (domicilioReceptor !== '34229') {
+      erroresValidacion.push(
+        `Domicilio Fiscal Receptor inválido (${domicilioReceptor || 'Vacío'} != 34229)`
       );
     }
     if (regimenReceptor !== '624') {
