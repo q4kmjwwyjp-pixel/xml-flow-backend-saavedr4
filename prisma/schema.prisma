@@ -30,6 +30,7 @@ model Proveedor {
   rfc             String       @unique
   nombre          String
   regimenFiscal   String
+  diasCredito     Int?
   facturas        FacturaXML[]
   createdAt       DateTime     @default(now())
 }

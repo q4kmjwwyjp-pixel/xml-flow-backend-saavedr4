@@ -27,6 +27,9 @@ export class PrismaService
         'ALTER TABLE "Proveedor" ADD COLUMN IF NOT EXISTS "codigoProveedor" TEXT;'
       );
       await this.$executeRawUnsafe(
+        'ALTER TABLE "Proveedor" ADD COLUMN IF NOT EXISTS "diasCredito" INTEGER;'
+      );
+      await this.$executeRawUnsafe(
         'ALTER TABLE "FacturaXML" ADD COLUMN IF NOT EXISTS "folioContrarrecibo" TEXT;'
       );
       await this.$executeRawUnsafe(

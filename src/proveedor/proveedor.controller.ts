@@ -54,6 +54,7 @@ export class ProveedorController {
       codigoProveedor?: string;
       nombre?: string;
       regimenFiscal?: string;
+      diasCredito?: number | null;
     }
   ) {
     return this.proveedorService.update(rfc, updateData);

@@ -266,7 +266,10 @@ export class ProveedorService implements OnModuleInit {
         ...p,
         codigoProveedor:
           p.codigoProveedor || previo?.codigoProveedor || null,
-        diasCredito: previo?.diasCredito ?? null,
+        diasCredito:
+          (p as any).diasCredito !== null && (p as any).diasCredito !== undefined
+            ? (p as any).diasCredito
+            : previo?.diasCredito ?? null,
       });
     }
 
@@ -325,6 +328,11 @@ export class ProveedorService implements OnModuleInit {
         prov.codigoProveedor ||
         obtenerDatosCatalogoPorRfc(prov.rfc)?.codigoProveedor ||
         null,
+      diasCredito:
+        (prov as any).diasCredito !== null &&
+        (prov as any).diasCredito !== undefined
+          ? (prov as any).diasCredito
+          : obtenerDatosCatalogoPorRfc(prov.rfc)?.diasCredito ?? null,
     };
   }
 
@@ -334,6 +342,7 @@ export class ProveedorService implements OnModuleInit {
       codigoProveedor: string;
       nombre: string;
       regimenFiscal: string;
+      diasCredito: number | null;
     }>
   ) {
     const rfcUpper = RFC.trim().toUpperCase();
@@ -401,9 +410,15 @@ export class ProveedorService implements OnModuleInit {
       data.regimenFiscal = updateProveedorDto.regimenFiscal.trim();
     }
 
+    if (updateProveedorDto.diasCredito !== undefined) {
+      const diasNum = Number(updateProveedorDto.diasCredito);
+      data.diasCredito =
+        !Number.isNaN(diasNum) && diasNum >= 0 ? diasNum : null;
+    }
+
     return this.prisma.proveedor.upsert({
       where: { rfc: rfcUpper },
-      update: data,
+      update: data as any,
       create: {
         rfc: rfcUpper,
         nombre:
@@ -416,7 +431,11 @@ export class ProveedorService implements OnModuleInit {
           data.codigoProveedor !== undefined
             ? data.codigoProveedor
             : delCatalogo?.codigoProveedor || null,
-      },
+        diasCredito:
+          data.diasCredito !== undefined
+            ? data.diasCredito
+            : delCatalogo?.diasCredito ?? null,
+      } as any,
     });
   }
 

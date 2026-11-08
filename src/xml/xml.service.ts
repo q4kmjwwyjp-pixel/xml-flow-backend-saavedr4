@@ -18,8 +18,11 @@ export class XmlService {
       const codigoCatalogo = datosCatalogo?.codigoProveedor;
       codigoFinal = factura.proveedor.codigoProveedor || codigoCatalogo || null;
       diasCatalogo =
-        datosCatalogo?.diasCredito !== undefined &&
-        datosCatalogo?.diasCredito !== null
+        factura.proveedor.diasCredito !== undefined &&
+        factura.proveedor.diasCredito !== null
+          ? Number(factura.proveedor.diasCredito)
+          : datosCatalogo?.diasCredito !== undefined &&
+            datosCatalogo?.diasCredito !== null
           ? Number(datosCatalogo.diasCredito)
           : null;
 
@@ -230,8 +233,11 @@ export class XmlService {
     }
 
     const diasEnListaProveedor =
-      datosCatalogo?.diasCredito !== undefined &&
-      datosCatalogo?.diasCredito !== null
+      (proveedorExistente as any)?.diasCredito !== undefined &&
+      (proveedorExistente as any)?.diasCredito !== null
+        ? Number((proveedorExistente as any).diasCredito)
+        : datosCatalogo?.diasCredito !== undefined &&
+          datosCatalogo?.diasCredito !== null
         ? Number(datosCatalogo.diasCredito)
         : null;
 
