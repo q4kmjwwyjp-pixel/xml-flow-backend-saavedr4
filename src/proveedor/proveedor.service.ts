@@ -166,6 +166,7 @@ export class ProveedorService implements OnModuleInit {
     rfc: string;
     nombre: string;
     regimenFiscal: string;
+    diasCredito?: number | null;
   }) {
     const rfc = (proveedorData.rfc || '').trim().toUpperCase();
     const nombre = (proveedorData.nombre || '')
@@ -233,13 +234,18 @@ export class ProveedorService implements OnModuleInit {
     const regimenFiscal =
       proveedorData.regimenFiscal?.trim() || (rfc.length === 12 ? '601' : '612');
 
+    const diasNum = Number(proveedorData.diasCredito);
+    const diasCredito =
+      !Number.isNaN(diasNum) && diasNum >= 0 ? diasNum : null;
+
     return this.prisma.proveedor.create({
       data: {
         codigoProveedor: codigoInput || null,
         rfc,
         nombre,
         regimenFiscal,
-      },
+        diasCredito,
+      } as any,
     });
   }
 
